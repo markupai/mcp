@@ -348,7 +348,7 @@ const TOOLS: Tool[] = [
   },
   {
     name: 'markupai_workflow_status',
-    description: 'Check the status of an asynchronous Markup.ai workflow. Use this to poll for results when other operations return a running status. Workflows typically complete within 5-30 seconds depending on text length and complexity.',
+    description: 'Check the status of an asynchronous Markup AI workflow. Use this to poll for results when other operations return a running status. Workflows typically complete within 5-30 seconds depending on text length and complexity.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -372,7 +372,7 @@ function createTextBuffer(text: string): Buffer {
   return Buffer.from(text, 'utf-8');
 }
 
-// Submit a workflow to Markup.ai
+// Submit a workflow to Markup AI
 async function submitWorkflow(
   endpoint: 'rewrites' | 'checks' | 'suggestions',
   text: string,
@@ -419,7 +419,7 @@ async function submitWorkflow(
         statusText: response.statusText,
         error: errorText
       });
-      throw new Error(`Markup.ai API error: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new Error(`Markup AI API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const result = await response.json() as StyleCheckResponse | RewriteResponse | SuggestionResponse;
@@ -456,7 +456,7 @@ async function getWorkflowStatus(
         statusText: response.statusText,
         error: errorText
       });
-      throw new Error(`Markup.ai API error: ${response.status} ${response.statusText} - ${errorText}`);
+      throw new Error(`Markup AI API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
     const result = await response.json() as StyleCheckResponse | RewriteResponse | SuggestionResponse;
@@ -701,7 +701,7 @@ async function main() {
       name: 'markupai-mcp-server',
       vendor: 'markupai',
       version: '1.0.0',
-      description: 'MCP server for Markup.ai API text analysis and improvement'
+      description: 'MCP server for Markup AI API text analysis and improvement'
     },
     {
       capabilities: {
@@ -872,7 +872,7 @@ async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
 
-  log('info', 'Markup.ai MCP server running on stdio');
+  log('info', 'Markup AI MCP server running on stdio');
 }
 
 main().catch((error) => {

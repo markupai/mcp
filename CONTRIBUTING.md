@@ -1,6 +1,6 @@
-# Contributing to Markup.ai MCP Server
+# Contributing to Markup AI MCP Server
 
-We welcome contributions to the Markup.ai MCP Server! This document provides guidelines for contributing to the project.
+We welcome contributions to the Markup AI MCP Server! This document provides guidelines for contributing to the project.
 
 ## Getting Started
 
@@ -13,7 +13,7 @@ We welcome contributions to the Markup.ai MCP Server! This document provides gui
 ## Development Setup
 
 1. Install dependencies: `npm install`
-2. Copy `.env.example` to `.env` and add your Markup.ai API key
+2. Copy `.env.example` to `.env` and add your Markup AI API key
 3. Run in development mode: `npm run dev`
 4. Build the project: `npm run build`
 

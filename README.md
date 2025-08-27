@@ -1,6 +1,6 @@
-# Markup.ai MCP Server
+# Markup AI MCP Server
 
-A Model Context Protocol (MCP) server that integrates with the Markup.ai API to provide advanced text analysis and improvement capabilities to AI assistants like Claude and Cursor.
+A Model Context Protocol (MCP) server that integrates with the Markup AI API to provide advanced text analysis and improvement capabilities to AI assistants like Claude and Cursor.
 
 ## Features
 
@@ -16,7 +16,7 @@ A Model Context Protocol (MCP) server that integrates with the Markup.ai API to 
 ### Prerequisites
 
 - Node.js 18.0.0 or higher
-- An Markup.ai API key
+- A Markup AI API key
 
 ### Setup
 
@@ -50,7 +50,7 @@ npm run build
 
 | Variable | Required | Description | Default |
 |----------|----------|-------------|---------|
-| `MARKUPAI_API_KEY` | Yes | Your Markup.ai API key | - |
+| `MARKUPAI_API_KEY` | Yes | Your Markup AI API key | - |
 | `MARKUPAI_BASE_URL` | No | API base URL | `https://api.markup.ai` |
 | `DEBUG` | No | Enable debug logging | `false` |
 | `MAX_TEXT_LENGTH` | No | Maximum text length (chars) | `100000` |
@@ -116,7 +116,7 @@ For local development or if you prefer to run from a local installation:
 
 ### Using with Cursor
 
-When using this MCP server with Cursor, you'll see a "Calling undefined" message with a "Run tool" button when the AI wants to use Markup.ai tools. This is **normal behavior** - simply click "Run tool" to approve the analysis. This manual approval is Cursor's security feature for MCP tool execution.
+When using this MCP server with Cursor, you'll see a "Calling undefined" message with a "Run tool" button when the AI wants to use Markup AI tools. This is **normal behavior** - simply click "Run tool" to approve the analysis. This manual approval is Cursor's security feature for MCP tool execution.
 
 ## Available Tools
 
@@ -190,7 +190,7 @@ npm run build
 
 ### Common Issues
 
-1. **"Calling undefined" message in Cursor**: This is normal Cursor behavior, not an error. When you see this message with a "Run tool" button, click the button to execute the Markup.ai analysis. This is Cursor's security feature requiring manual approval for MCP tool execution.
+1. **"Calling undefined" message in Cursor**: This is normal Cursor behavior, not an error. When you see this message with a "Run tool" button, click the button to execute the Markup AI analysis. This is Cursor's security feature requiring manual approval for MCP tool execution.
 
 2. **"Client closed" error in Cursor**: Try clearing the npx cache: `npx clear-npx-cache` and restart Cursor
 
@@ -208,7 +208,7 @@ DEBUG=true npm run start
 
 ## Architecture
 
-The server implements the Model Context Protocol using stdio transport and provides four main tools that interact with the Markup.ai API. Key features include:
+The server implements the Model Context Protocol using stdio transport and provides four main tools that interact with the Markup AI API. Key features include:
 
 - **Cross-IDE Compatibility**: Works with Claude Desktop, Cursor, and any MCP-compatible IDE
 - **Retry Logic**: Exponential backoff for improved reliability
@@ -234,5 +234,5 @@ MIT
 For issues and questions:
 
 - Create an issue on GitHub
-- Check the [Markup.ai documentation](https://docs.markupai.com)
-- Contact Markup.ai support
+- Check the [Markup AI documentation](https://docs.markupai.com)
+- Contact Markup AI support
