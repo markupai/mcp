@@ -77,47 +77,108 @@ interface WorkflowStatusArgs {
   workflow_type: 'rewrites' | 'checks' | 'suggestions';
 }
 
-interface ScoreDetails {
-  score: number;
+// Score component interfaces
+interface GrammarScore {
+  score: number | null;
   issues?: number;
+}
+
+interface StyleGuideScore {
+  score: number | null;
+  issues?: number;
+}
+
+interface TerminologyScore {
+  score: number | null;
+  issues?: number;
+}
+
+interface ClarityScore {
+  score: number | null;
   word_count?: number;
   sentence_count?: number;
   average_sentence_length?: number;
   flesch_reading_ease?: number;
   flesch_kincaid_grade?: number;
+}
+
+interface ToneScore {
+  score: number | null;
   informality?: number;
   target_informality?: number;
   liveliness?: number;
   target_liveliness?: number;
 }
 
-interface Scores {
-  quality: ScoreDetails;
-  clarity: ScoreDetails;
-  grammar: ScoreDetails;
-  style_guide: ScoreDetails;
-  tone: ScoreDetails;
-  terminology: ScoreDetails;
+// Main score structure
+interface QualityScore {
+  score: number | null;
+  grammar?: GrammarScore;
+  style_guide?: StyleGuideScore;
+  terminology?: TerminologyScore;
 }
 
+interface AnalysisScore {
+  clarity?: ClarityScore;
+  tone?: ToneScore;
+}
+
+interface ScoreOutput {
+  quality?: QualityScore;
+  analysis?: AnalysisScore;
+}
+
+// Issue/Suggestion interfaces
 interface Issue {
+  original: string;
+  char_index?: number;
   category?: string;
   subcategory?: string;
+}
+
+interface Suggestion {
   original: string;
   suggestion?: string;
   modified?: string;
+  char_index?: number;
+  category?: string;
+  subcategory?: string;
 }
 
-interface WorkflowResponse {
+// Response interfaces
+interface StyleCheckResponse {
   workflow_id?: string;
   status: 'running' | 'completed' | 'failed';
-  scores?: Scores;
-  rewrite_scores?: Scores;
+  scores?: ScoreOutput | null;
   issues?: Issue[];
-  rewrite?: string;
   check_options?: any;
+  webhook_response?: any;
   error?: string;
 }
+
+interface RewriteResponse {
+  workflow_id?: string;
+  status: 'running' | 'completed' | 'failed';
+  scores?: ScoreOutput | null;
+  rewrite_scores?: ScoreOutput | null;
+  issues?: Suggestion[];
+  rewrite?: string | null;
+  check_options?: any;
+  webhook_response?: any;
+  error?: string;
+}
+
+interface SuggestionResponse {
+  workflow_id?: string;
+  status: 'running' | 'completed' | 'failed';
+  scores?: ScoreOutput | null;
+  issues?: Suggestion[];
+  check_options?: any;
+  webhook_response?: any;
+  error?: string;
+}
+
+type WorkflowResponse = StyleCheckResponse | RewriteResponse | SuggestionResponse;
 
 // Type guards
 function isBaseToolArgs(args: unknown): args is BaseToolArgs {
@@ -318,7 +379,7 @@ async function submitWorkflow(
   dialect: string,
   tone: string,
   style_guide: string
-): Promise<WorkflowResponse> {
+): Promise<StyleCheckResponse | RewriteResponse | SuggestionResponse> {
   validateTextInput(text);
 
   return retryWithBackoff(async () => {
@@ -345,7 +406,7 @@ async function submitWorkflow(
     const response = await fetch(`${MARKUPAI_BASE_URL}/v1/style/${endpoint}`, {
       method: 'POST',
       headers: {
-        'Authorization': MARKUPAI_API_KEY,
+        'Authorization': `Bearer ${MARKUPAI_API_KEY}`,
         ...formData.getHeaders()
       },
       body: formData,
@@ -361,7 +422,7 @@ async function submitWorkflow(
       throw new Error(`Markup.ai API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    const result = await response.json() as WorkflowResponse;
+    const result = await response.json() as StyleCheckResponse | RewriteResponse | SuggestionResponse;
     log('info', `Workflow submitted successfully`, {
       workflow_id: result.workflow_id,
       status: result.status
@@ -375,7 +436,7 @@ async function submitWorkflow(
 async function getWorkflowStatus(
   workflow_id: string,
   workflow_type: 'rewrites' | 'checks' | 'suggestions'
-): Promise<WorkflowResponse> {
+): Promise<StyleCheckResponse | RewriteResponse | SuggestionResponse> {
   return retryWithBackoff(async () => {
     log('debug', `Checking workflow status`, { workflow_id, workflow_type });
 
@@ -383,7 +444,7 @@ async function getWorkflowStatus(
       `${MARKUPAI_BASE_URL}/v1/style/${workflow_type}/${workflow_id}`,
       {
         headers: {
-          'Authorization': MARKUPAI_API_KEY,
+          'Authorization': `Bearer ${MARKUPAI_API_KEY}`,
         },
       }
     );
@@ -398,7 +459,7 @@ async function getWorkflowStatus(
       throw new Error(`Markup.ai API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    const result = await response.json() as WorkflowResponse;
+    const result = await response.json() as StyleCheckResponse | RewriteResponse | SuggestionResponse;
     log('debug', `Workflow status retrieved`, {
       workflow_id,
       status: result.status
@@ -412,8 +473,8 @@ async function getWorkflowStatus(
 async function pollWorkflowCompletion(
   workflow_id: string,
   workflow_type: 'rewrites' | 'checks' | 'suggestions',
-  initialResult: WorkflowResponse
-): Promise<WorkflowResponse> {
+  initialResult: StyleCheckResponse | RewriteResponse | SuggestionResponse
+): Promise<StyleCheckResponse | RewriteResponse | SuggestionResponse> {
   const startTime = Date.now();
   let result = initialResult;
   let status = result.status;
@@ -478,48 +539,137 @@ async function pollWorkflowCompletion(
 }
 
 // Format response with highlighted scores
-function formatResponse(result: WorkflowResponse): string {
+function formatResponse(result: StyleCheckResponse | RewriteResponse | SuggestionResponse): string {
   let formatted = `Status: ${result.status}\n`;
   if (result.workflow_id) {
     formatted += `Workflow ID: ${result.workflow_id}\n`;
   }
 
+  // Format original scores
   if (result.scores) {
     formatted += '\n=== SCORES ===\n';
-    formatted += `Quality Score: ${result.scores.quality.score}\n`;
-    formatted += `Clarity Score: ${result.scores.clarity.score}\n`;
-    formatted += `  - Word Count: ${result.scores.clarity.word_count}\n`;
-    formatted += `  - Sentence Count: ${result.scores.clarity.sentence_count}\n`;
-    formatted += `  - Avg Sentence Length: ${result.scores.clarity.average_sentence_length}\n`;
-    formatted += `  - Flesch Reading Ease: ${result.scores.clarity.flesch_reading_ease}\n`;
-    formatted += `  - Flesch-Kincaid Grade: ${result.scores.clarity.flesch_kincaid_grade}\n`;
-    formatted += `Grammar Score: ${result.scores.grammar.score} (${result.scores.grammar.issues} issues)\n`;
-    formatted += `Style Guide Score: ${result.scores.style_guide.score} (${result.scores.style_guide.issues} issues)\n`;
-    formatted += `Tone Score: ${result.scores.tone.score}\n`;
-    formatted += `  - Informality: ${result.scores.tone.informality} (target: ${result.scores.tone.target_informality})\n`;
-    formatted += `  - Liveliness: ${result.scores.tone.liveliness} (target: ${result.scores.tone.target_liveliness})\n`;
-    formatted += `Terminology Score: ${result.scores.terminology.score} (${result.scores.terminology.issues} issues)\n`;
+    
+    // Quality scores
+    if (result.scores.quality) {
+      formatted += `Quality Score: ${result.scores.quality.score ?? 'N/A'}\n`;
+      
+      if (result.scores.quality.grammar) {
+        formatted += `  Grammar: ${result.scores.quality.grammar.score ?? 'N/A'}`;
+        if (result.scores.quality.grammar.issues !== undefined) {
+          formatted += ` (${result.scores.quality.grammar.issues} issues)`;
+        }
+        formatted += '\n';
+      }
+      
+      if (result.scores.quality.style_guide) {
+        formatted += `  Style Guide: ${result.scores.quality.style_guide.score ?? 'N/A'}`;
+        if (result.scores.quality.style_guide.issues !== undefined) {
+          formatted += ` (${result.scores.quality.style_guide.issues} issues)`;
+        }
+        formatted += '\n';
+      }
+      
+      if (result.scores.quality.terminology) {
+        formatted += `  Terminology: ${result.scores.quality.terminology.score ?? 'N/A'}`;
+        if (result.scores.quality.terminology.issues !== undefined) {
+          formatted += ` (${result.scores.quality.terminology.issues} issues)`;
+        }
+        formatted += '\n';
+      }
+    }
+    
+    // Analysis scores
+    if (result.scores.analysis) {
+      if (result.scores.analysis.clarity) {
+        const clarity = result.scores.analysis.clarity;
+        formatted += `Clarity Score: ${clarity.score ?? 'N/A'}\n`;
+        if (clarity.word_count !== undefined) {
+          formatted += `  - Word Count: ${clarity.word_count}\n`;
+        }
+        if (clarity.sentence_count !== undefined) {
+          formatted += `  - Sentence Count: ${clarity.sentence_count}\n`;
+        }
+        if (clarity.average_sentence_length !== undefined) {
+          formatted += `  - Avg Sentence Length: ${clarity.average_sentence_length}\n`;
+        }
+        if (clarity.flesch_reading_ease !== undefined) {
+          formatted += `  - Flesch Reading Ease: ${clarity.flesch_reading_ease}\n`;
+        }
+        if (clarity.flesch_kincaid_grade !== undefined) {
+          formatted += `  - Flesch-Kincaid Grade: ${clarity.flesch_kincaid_grade}\n`;
+        }
+      }
+      
+      if (result.scores.analysis.tone) {
+        const tone = result.scores.analysis.tone;
+        formatted += `Tone Score: ${tone.score ?? 'N/A'}\n`;
+        if (tone.informality !== undefined && tone.target_informality !== undefined) {
+          formatted += `  - Informality: ${tone.informality} (target: ${tone.target_informality})\n`;
+        }
+        if (tone.liveliness !== undefined && tone.target_liveliness !== undefined) {
+          formatted += `  - Liveliness: ${tone.liveliness} (target: ${tone.target_liveliness})\n`;
+        }
+      }
+    }
   }
 
-  if (result.rewrite_scores) {
+  // Format rewrite scores (for RewriteResponse)
+  if ('rewrite_scores' in result && result.rewrite_scores) {
     formatted += '\n=== REWRITE SCORES ===\n';
-    formatted += `Quality Score: ${result.rewrite_scores.quality.score}\n`;
-    formatted += `Clarity Score: ${result.rewrite_scores.clarity.score}\n`;
-    formatted += `Grammar Score: ${result.rewrite_scores.grammar.score} (${result.rewrite_scores.grammar.issues} issues)\n`;
-    formatted += `Style Guide Score: ${result.rewrite_scores.style_guide.score} (${result.rewrite_scores.style_guide.issues} issues)\n`;
-    formatted += `Tone Score: ${result.rewrite_scores.tone.score}\n`;
-    formatted += `Terminology Score: ${result.rewrite_scores.terminology.score} (${result.rewrite_scores.terminology.issues} issues)\n`;
+    
+    // Quality scores
+    if (result.rewrite_scores.quality) {
+      formatted += `Quality Score: ${result.rewrite_scores.quality.score ?? 'N/A'}\n`;
+      
+      if (result.rewrite_scores.quality.grammar) {
+        formatted += `  Grammar: ${result.rewrite_scores.quality.grammar.score ?? 'N/A'}`;
+        if (result.rewrite_scores.quality.grammar.issues !== undefined) {
+          formatted += ` (${result.rewrite_scores.quality.grammar.issues} issues)`;
+        }
+        formatted += '\n';
+      }
+      
+      if (result.rewrite_scores.quality.style_guide) {
+        formatted += `  Style Guide: ${result.rewrite_scores.quality.style_guide.score ?? 'N/A'}`;
+        if (result.rewrite_scores.quality.style_guide.issues !== undefined) {
+          formatted += ` (${result.rewrite_scores.quality.style_guide.issues} issues)`;
+        }
+        formatted += '\n';
+      }
+      
+      if (result.rewrite_scores.quality.terminology) {
+        formatted += `  Terminology: ${result.rewrite_scores.quality.terminology.score ?? 'N/A'}`;
+        if (result.rewrite_scores.quality.terminology.issues !== undefined) {
+          formatted += ` (${result.rewrite_scores.quality.terminology.issues} issues)`;
+        }
+        formatted += '\n';
+      }
+    }
+    
+    // Analysis scores
+    if (result.rewrite_scores.analysis) {
+      if (result.rewrite_scores.analysis.clarity) {
+        formatted += `Clarity Score: ${result.rewrite_scores.analysis.clarity.score ?? 'N/A'}\n`;
+      }
+      if (result.rewrite_scores.analysis.tone) {
+        formatted += `Tone Score: ${result.rewrite_scores.analysis.tone.score ?? 'N/A'}\n`;
+      }
+    }
   }
 
-  if (result.rewrite) {
+  // Format rewritten text (for RewriteResponse)
+  if ('rewrite' in result && result.rewrite) {
     formatted += '\n=== REWRITTEN TEXT ===\n';
     formatted += result.rewrite + '\n';
   }
 
+  // Format issues/suggestions
   if (result.issues && result.issues.length > 0) {
     formatted += `\n=== ISSUES (${result.issues.length} total) ===\n`;
     result.issues.forEach((issue, idx) => {
-      formatted += `${idx + 1}. [${issue.category || issue.subcategory}] ${issue.original} → ${issue.suggestion || issue.modified || 'N/A'}\n`;
+      const suggestion = 'suggestion' in issue ? issue.suggestion : undefined;
+      const modified = 'modified' in issue ? issue.modified : undefined;
+      formatted += `${idx + 1}. [${issue.category || issue.subcategory || 'N/A'}] ${issue.original} → ${suggestion || modified || 'N/A'}\n`;
     });
   }
 
