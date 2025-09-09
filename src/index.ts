@@ -7,24 +7,24 @@ import {
   Tool,
 } from '@modelcontextprotocol/sdk/types.js';
 import FormData from 'form-data';
-import fetch, { File, Blob } from 'node-fetch';
+import fetch from 'node-fetch';
 import { fileURLToPath } from 'url';
-import { dirname, join } from 'path';
-import { readFileSync } from 'fs';
+import { dirname } from 'path';
 import dotenv from 'dotenv';
 
 // Load environment variables
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
+dirname(__filename); // Required for ES modules but not used directly
 
 // Logging configuration
 const DEBUG = process.env.DEBUG === 'true';
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 const LOG_LEVELS = ['error', 'warn', 'info', 'debug'] as const;
 type LogLevel = typeof LOG_LEVELS[number];
 
-function log(level: LogLevel, message: string, data?: any) {
+function log(level: LogLevel, message: string, data?: unknown) {
   if (level === 'debug' && !DEBUG) return;
   const timestamp = new Date().toISOString();
   const logData = data ? ` ${JSON.stringify(data)}` : '';
@@ -77,61 +77,15 @@ interface WorkflowStatusArgs {
   workflow_type: 'rewrites' | 'checks' | 'suggestions';
 }
 
-// Score component interfaces
-interface GrammarScore {
-  score: number | null;
-  issues?: number;
+
+interface Position {
+  start_index?: number;
+  end_index?: number;
 }
 
-interface StyleGuideScore {
-  score: number | null;
-  issues?: number;
-}
-
-interface TerminologyScore {
-  score: number | null;
-  issues?: number;
-}
-
-interface ClarityScore {
-  score: number | null;
-  word_count?: number;
-  sentence_count?: number;
-  average_sentence_length?: number;
-  flesch_reading_ease?: number;
-  flesch_kincaid_grade?: number;
-}
-
-interface ToneScore {
-  score: number | null;
-  informality?: number;
-  target_informality?: number;
-  liveliness?: number;
-  target_liveliness?: number;
-}
-
-// Main score structure
-interface QualityScore {
-  score: number | null;
-  grammar?: GrammarScore;
-  style_guide?: StyleGuideScore;
-  terminology?: TerminologyScore;
-}
-
-interface AnalysisScore {
-  clarity?: ClarityScore;
-  tone?: ToneScore;
-}
-
-interface ScoreOutput {
-  quality?: QualityScore;
-  analysis?: AnalysisScore;
-}
-
-// Issue/Suggestion interfaces
 interface Issue {
   original: string;
-  char_index?: number;
+  position?: Position;
   category?: string;
   subcategory?: string;
 }
@@ -140,45 +94,102 @@ interface Suggestion {
   original: string;
   suggestion?: string;
   modified?: string;
-  char_index?: number;
+  position?: Position;
   category?: string;
   subcategory?: string;
 }
 
-// Response interfaces
-interface StyleCheckResponse {
-  workflow_id?: string;
+interface WorkflowInfo {
+  id: string;
+  api_version?: string;
+  generated_at?: string | null;
   status: 'running' | 'completed' | 'failed';
-  scores?: ScoreOutput | null;
+}
+
+interface StyleGuideConfig {
+  style_guide_type?: string;
+  style_guide_id?: string;
+}
+
+interface ConfigOptions {
+  dialect?: string;
+  style_guide?: StyleGuideConfig | string;
+  tone?: string;
+}
+
+interface ContentScoreData {
+  quality_score?: number;
+  clarity_score?: number;
+  word_count?: number;
+  sentence_count?: number;
+  avg_sentence_length?: number;
+  flesch_reading_ease?: number;
+  flesch_kincaid_grade?: number;
+}
+
+interface IssueScoreData {
+  grammar_score?: number;
+  grammar_issues?: number;
+  style_guide_score?: number;
+  style_guide_issues?: number;
+  terminology_score?: number;
+  terminology_issues?: number;
+  tone_score?: number;
+  informality?: number;
+  target_informality?: number;
+  liveliness?: number;
+  target_liveliness?: number;
+}
+
+interface ContentScores {
+  content_score?: ContentScoreData;
+  issue_score?: IssueScoreData;
+}
+
+interface OriginalContent {
   issues?: Issue[];
-  check_options?: any;
-  webhook_response?: any;
-  error?: string;
+  initial_scores?: ContentScores;
+  final_scores?: ContentScores;
+}
+
+interface RewriteContent {
+  output?: {
+    merged_text?: string;
+    original_text?: string;
+    initial_scores?: ContentScores;
+    final_scores?: ContentScores;
+  };
+}
+
+interface SuggestionOriginalContent {
+  issues?: Suggestion[];
+  initial_scores?: ContentScores;
+  final_scores?: ContentScores;
+}
+
+interface StyleCheckResponse {
+  workflow: WorkflowInfo;
+  config?: ConfigOptions | null;
+  original?: OriginalContent | null;
 }
 
 interface RewriteResponse {
-  workflow_id?: string;
-  status: 'running' | 'completed' | 'failed';
-  scores?: ScoreOutput | null;
-  rewrite_scores?: ScoreOutput | null;
-  issues?: Suggestion[];
-  rewrite?: string | null;
-  check_options?: any;
-  webhook_response?: any;
-  error?: string;
+  workflow: WorkflowInfo;
+  config?: ConfigOptions | null;
+  original?: SuggestionOriginalContent | null;
+  rewrite?: RewriteContent | null;
 }
 
 interface SuggestionResponse {
-  workflow_id?: string;
-  status: 'running' | 'completed' | 'failed';
-  scores?: ScoreOutput | null;
-  issues?: Suggestion[];
-  check_options?: any;
-  webhook_response?: any;
-  error?: string;
+  workflow: WorkflowInfo;
+  config?: ConfigOptions | null;
+  original?: SuggestionOriginalContent | null;
 }
 
-type WorkflowResponse = StyleCheckResponse | RewriteResponse | SuggestionResponse;
+interface WorkflowSubmitResponse {
+  status: 'running' | 'completed' | 'failed';
+  workflow_id: string;
+}
 
 // Type guards
 function isBaseToolArgs(args: unknown): args is BaseToolArgs {
@@ -186,7 +197,7 @@ function isBaseToolArgs(args: unknown): args is BaseToolArgs {
     typeof args === 'object' &&
     args !== null &&
     'text' in args &&
-    typeof (args as any).text === 'string'
+    typeof (args as Record<string, unknown>).text === 'string'
   );
 }
 
@@ -196,8 +207,8 @@ function isWorkflowStatusArgs(args: unknown): args is WorkflowStatusArgs {
     args !== null &&
     'workflow_id' in args &&
     'workflow_type' in args &&
-    typeof (args as any).workflow_id === 'string' &&
-    ['rewrites', 'checks', 'suggestions'].includes((args as any).workflow_type)
+    typeof (args as Record<string, unknown>).workflow_id === 'string' &&
+    ['rewrites', 'checks', 'suggestions'].includes((args as Record<string, unknown>).workflow_type as string)
   );
 }
 
@@ -270,8 +281,8 @@ const TOOLS: Tool[] = [
         tone: {
           type: 'string',
           description: 'Desired tone of the rewritten content',
-          enum: ['academic', 'business', 'casual', 'conversational', 'formal', 'gen-z', 'informal', 'technical'],
-          default: 'formal'
+          enum: ['academic', 'confident', 'conversational', 'empathetic', 'engaging', 'friendly', 'professional', 'technical'],
+          default: 'professional'
         },
         style_guide: {
           type: 'string',
@@ -302,8 +313,8 @@ const TOOLS: Tool[] = [
         tone: {
           type: 'string',
           description: 'Target tone to check against',
-          enum: ['academic', 'business', 'casual', 'conversational', 'formal', 'gen-z', 'informal', 'technical'],
-          default: 'formal'
+          enum: ['academic', 'confident', 'conversational', 'empathetic', 'engaging', 'friendly', 'professional', 'technical'],
+          default: 'professional'
         },
         style_guide: {
           type: 'string',
@@ -334,8 +345,8 @@ const TOOLS: Tool[] = [
         tone: {
           type: 'string',
           description: 'Target tone for suggestions',
-          enum: ['academic', 'business', 'casual', 'conversational', 'formal', 'gen-z', 'informal', 'technical'],
-          default: 'formal'
+          enum: ['academic', 'confident', 'conversational', 'empathetic', 'engaging', 'friendly', 'professional', 'technical'],
+          default: 'professional'
         },
         style_guide: {
           type: 'string',
@@ -379,7 +390,7 @@ async function submitWorkflow(
   dialect: string,
   tone: string,
   style_guide: string
-): Promise<StyleCheckResponse | RewriteResponse | SuggestionResponse> {
+): Promise<WorkflowSubmitResponse> {
   validateTextInput(text);
 
   return retryWithBackoff(async () => {
@@ -422,7 +433,7 @@ async function submitWorkflow(
       throw new Error(`Markup AI API error: ${response.status} ${response.statusText} - ${errorText}`);
     }
 
-    const result = await response.json() as StyleCheckResponse | RewriteResponse | SuggestionResponse;
+    const result = await response.json() as WorkflowSubmitResponse;
     log('info', `Workflow submitted successfully`, {
       workflow_id: result.workflow_id,
       status: result.status
@@ -462,7 +473,7 @@ async function getWorkflowStatus(
     const result = await response.json() as StyleCheckResponse | RewriteResponse | SuggestionResponse;
     log('debug', `Workflow status retrieved`, {
       workflow_id,
-      status: result.status
+      status: result.workflow.status
     });
 
     return result;
@@ -472,18 +483,18 @@ async function getWorkflowStatus(
 // Poll workflow until completion with timeout
 async function pollWorkflowCompletion(
   workflow_id: string,
-  workflow_type: 'rewrites' | 'checks' | 'suggestions',
-  initialResult: StyleCheckResponse | RewriteResponse | SuggestionResponse
+  workflow_type: 'rewrites' | 'checks' | 'suggestions'
 ): Promise<StyleCheckResponse | RewriteResponse | SuggestionResponse> {
   const startTime = Date.now();
-  let result = initialResult;
-  let status = result.status;
+  let status: string = 'running';
 
   log('info', `Polling workflow for completion`, {
     workflow_id,
     workflow_type,
     timeout: WORKFLOW_TIMEOUT
   });
+
+  let result: StyleCheckResponse | RewriteResponse | SuggestionResponse | null = null;
 
   while (status === 'running') {
     const elapsedTime = Date.now() - startTime;
@@ -501,7 +512,7 @@ async function pollWorkflowCompletion(
 
     try {
       result = await getWorkflowStatus(workflow_id, workflow_type);
-      status = result.status;
+      status = result.workflow.status;
 
       log('debug', `Workflow poll update`, {
         workflow_id,
@@ -519,10 +530,13 @@ async function pollWorkflowCompletion(
 
   if (status === 'failed') {
     log('error', `Workflow failed`, {
-      workflow_id,
-      error: result.error
+      workflow_id
     });
-    throw new Error(`Workflow failed: ${result.error || 'Unknown error'}`);
+    throw new Error(`Workflow failed`);
+  }
+
+  if (!result) {
+    throw new Error('No result obtained from workflow');
   }
 
   log('info', `Workflow completed successfully`, {
@@ -530,152 +544,146 @@ async function pollWorkflowCompletion(
     totalTime: Date.now() - startTime
   });
 
-  // Ensure the final result includes the workflow_id from the original submission
-  if (!result.workflow_id) {
-    result.workflow_id = workflow_id;
-  }
-
   return result;
 }
 
 // Format response with highlighted scores
 function formatResponse(result: StyleCheckResponse | RewriteResponse | SuggestionResponse): string {
-  let formatted = `Status: ${result.status}\n`;
-  if (result.workflow_id) {
-    formatted += `Workflow ID: ${result.workflow_id}\n`;
+  let formatted = '';
+
+  // Workflow info
+  if (result.workflow) {
+    formatted += `Status: ${result.workflow.status}\n`;
+    formatted += `Workflow ID: ${result.workflow.id}\n`;
   }
 
-  // Format original scores
-  if (result.scores) {
-    formatted += '\n=== SCORES ===\n';
-    
-    // Quality scores
-    if (result.scores.quality) {
-      formatted += `Quality Score: ${result.scores.quality.score ?? 'N/A'}\n`;
-      
-      if (result.scores.quality.grammar) {
-        formatted += `  Grammar: ${result.scores.quality.grammar.score ?? 'N/A'}`;
-        if (result.scores.quality.grammar.issues !== undefined) {
-          formatted += ` (${result.scores.quality.grammar.issues} issues)`;
-        }
-        formatted += '\n';
-      }
-      
-      if (result.scores.quality.style_guide) {
-        formatted += `  Style Guide: ${result.scores.quality.style_guide.score ?? 'N/A'}`;
-        if (result.scores.quality.style_guide.issues !== undefined) {
-          formatted += ` (${result.scores.quality.style_guide.issues} issues)`;
-        }
-        formatted += '\n';
-      }
-      
-      if (result.scores.quality.terminology) {
-        formatted += `  Terminology: ${result.scores.quality.terminology.score ?? 'N/A'}`;
-        if (result.scores.quality.terminology.issues !== undefined) {
-          formatted += ` (${result.scores.quality.terminology.issues} issues)`;
-        }
-        formatted += '\n';
-      }
-    }
-    
-    // Analysis scores
-    if (result.scores.analysis) {
-      if (result.scores.analysis.clarity) {
-        const clarity = result.scores.analysis.clarity;
-        formatted += `Clarity Score: ${clarity.score ?? 'N/A'}\n`;
-        if (clarity.word_count !== undefined) {
-          formatted += `  - Word Count: ${clarity.word_count}\n`;
-        }
-        if (clarity.sentence_count !== undefined) {
-          formatted += `  - Sentence Count: ${clarity.sentence_count}\n`;
-        }
-        if (clarity.average_sentence_length !== undefined) {
-          formatted += `  - Avg Sentence Length: ${clarity.average_sentence_length}\n`;
-        }
-        if (clarity.flesch_reading_ease !== undefined) {
-          formatted += `  - Flesch Reading Ease: ${clarity.flesch_reading_ease}\n`;
-        }
-        if (clarity.flesch_kincaid_grade !== undefined) {
-          formatted += `  - Flesch-Kincaid Grade: ${clarity.flesch_kincaid_grade}\n`;
-        }
-      }
-      
-      if (result.scores.analysis.tone) {
-        const tone = result.scores.analysis.tone;
-        formatted += `Tone Score: ${tone.score ?? 'N/A'}\n`;
-        if (tone.informality !== undefined && tone.target_informality !== undefined) {
-          formatted += `  - Informality: ${tone.informality} (target: ${tone.target_informality})\n`;
-        }
-        if (tone.liveliness !== undefined && tone.target_liveliness !== undefined) {
-          formatted += `  - Liveliness: ${tone.liveliness} (target: ${tone.target_liveliness})\n`;
-        }
-      }
+  // Config info
+  if (result.config) {
+    formatted += '\n=== CONFIGURATION ===\n';
+    if (result.config.dialect) formatted += `Dialect: ${result.config.dialect}\n`;
+    if (result.config.tone) formatted += `Tone: ${result.config.tone}\n`;
+    if (result.config.style_guide) {
+      const styleGuideInfo = typeof result.config.style_guide === 'object'
+        ? (result.config.style_guide as StyleGuideConfig).style_guide_type || (result.config.style_guide as StyleGuideConfig).style_guide_id
+        : result.config.style_guide;
+      formatted += `Style Guide: ${styleGuideInfo}\n`;
     }
   }
 
-  // Format rewrite scores (for RewriteResponse)
-  if ('rewrite_scores' in result && result.rewrite_scores) {
-    formatted += '\n=== REWRITE SCORES ===\n';
-    
-    // Quality scores
-    if (result.rewrite_scores.quality) {
-      formatted += `Quality Score: ${result.rewrite_scores.quality.score ?? 'N/A'}\n`;
-      
-      if (result.rewrite_scores.quality.grammar) {
-        formatted += `  Grammar: ${result.rewrite_scores.quality.grammar.score ?? 'N/A'}`;
-        if (result.rewrite_scores.quality.grammar.issues !== undefined) {
-          formatted += ` (${result.rewrite_scores.quality.grammar.issues} issues)`;
-        }
-        formatted += '\n';
-      }
-      
-      if (result.rewrite_scores.quality.style_guide) {
-        formatted += `  Style Guide: ${result.rewrite_scores.quality.style_guide.score ?? 'N/A'}`;
-        if (result.rewrite_scores.quality.style_guide.issues !== undefined) {
-          formatted += ` (${result.rewrite_scores.quality.style_guide.issues} issues)`;
-        }
-        formatted += '\n';
-      }
-      
-      if (result.rewrite_scores.quality.terminology) {
-        formatted += `  Terminology: ${result.rewrite_scores.quality.terminology.score ?? 'N/A'}`;
-        if (result.rewrite_scores.quality.terminology.issues !== undefined) {
-          formatted += ` (${result.rewrite_scores.quality.terminology.issues} issues)`;
-        }
-        formatted += '\n';
+  // Original content scores and issues
+  if (result.original) {
+    if (result.original.initial_scores || result.original.final_scores) {
+      formatted += '\n=== ORIGINAL SCORES ===\n';
+
+      const scores = result.original.final_scores || result.original.initial_scores;
+      if (scores) {
+        formatted += formatContentScores(scores);
       }
     }
-    
-    // Analysis scores
-    if (result.rewrite_scores.analysis) {
-      if (result.rewrite_scores.analysis.clarity) {
-        formatted += `Clarity Score: ${result.rewrite_scores.analysis.clarity.score ?? 'N/A'}\n`;
-      }
-      if (result.rewrite_scores.analysis.tone) {
-        formatted += `Tone Score: ${result.rewrite_scores.analysis.tone.score ?? 'N/A'}\n`;
-      }
+
+    // Format issues
+    if (result.original.issues && result.original.issues.length > 0) {
+      formatted += `\n=== ISSUES (${result.original.issues.length} total) ===\n`;
+      result.original.issues.forEach((issue, idx) => {
+        const suggestion = 'suggestion' in issue ? issue.suggestion : undefined;
+        const modified = 'modified' in issue ? issue.modified : undefined;
+        const category = issue.category || issue.subcategory || 'General';
+        const replacement = suggestion || modified || 'N/A';
+        formatted += `${idx + 1}. [${category}] "${issue.original}" → "${replacement}"\n`;
+      });
     }
   }
 
-  // Format rewritten text (for RewriteResponse)
+  // Rewrite content (for RewriteResponse)
   if ('rewrite' in result && result.rewrite) {
-    formatted += '\n=== REWRITTEN TEXT ===\n';
-    formatted += result.rewrite + '\n';
-  }
+    if (result.rewrite.output) {
+      // Rewrite scores
+      if (result.rewrite.output.final_scores || result.rewrite.output.initial_scores) {
+        formatted += '\n=== REWRITE SCORES ===\n';
+        const scores = result.rewrite.output.final_scores || result.rewrite.output.initial_scores;
+        if (scores) {
+          formatted += formatContentScores(scores);
+        }
+      }
 
-  // Format issues/suggestions
-  if (result.issues && result.issues.length > 0) {
-    formatted += `\n=== ISSUES (${result.issues.length} total) ===\n`;
-    result.issues.forEach((issue, idx) => {
-      const suggestion = 'suggestion' in issue ? issue.suggestion : undefined;
-      const modified = 'modified' in issue ? issue.modified : undefined;
-      formatted += `${idx + 1}. [${issue.category || issue.subcategory || 'N/A'}] ${issue.original} → ${suggestion || modified || 'N/A'}\n`;
-    });
+      // Rewritten text
+      if (result.rewrite.output.merged_text) {
+        formatted += '\n=== REWRITTEN TEXT ===\n';
+        formatted += result.rewrite.output.merged_text + '\n';
+      }
+    }
   }
 
   if (DEBUG) {
     formatted += '\n=== FULL RESPONSE ===\n';
     formatted += JSON.stringify(result, null, 2);
+  }
+
+  return formatted;
+}
+
+// Helper function to format content scores
+function formatContentScores(scores: ContentScores): string {
+  let formatted = '';
+
+  // Extract and format scores based on the actual structure
+  if (scores.content_score) {
+    const cs = scores.content_score;
+    if (cs.quality_score !== undefined) {
+      formatted += `Quality Score: ${cs.quality_score}\n`;
+    }
+    if (cs.clarity_score !== undefined) {
+      formatted += `Clarity Score: ${cs.clarity_score}\n`;
+    }
+    if (cs.word_count !== undefined) {
+      formatted += `  - Word Count: ${cs.word_count}\n`;
+    }
+    if (cs.sentence_count !== undefined) {
+      formatted += `  - Sentence Count: ${cs.sentence_count}\n`;
+    }
+    if (cs.avg_sentence_length !== undefined) {
+      formatted += `  - Avg Sentence Length: ${cs.avg_sentence_length}\n`;
+    }
+    if (cs.flesch_reading_ease !== undefined) {
+      formatted += `  - Flesch Reading Ease: ${cs.flesch_reading_ease}\n`;
+    }
+    if (cs.flesch_kincaid_grade !== undefined) {
+      formatted += `  - Flesch-Kincaid Grade: ${cs.flesch_kincaid_grade}\n`;
+    }
+  }
+
+  if (scores.issue_score) {
+    const is = scores.issue_score;
+    if (is.grammar_score !== undefined) {
+      formatted += `Grammar Score: ${is.grammar_score}`;
+      if (is.grammar_issues !== undefined) {
+        formatted += ` (${is.grammar_issues} issues)`;
+      }
+      formatted += '\n';
+    }
+    if (is.style_guide_score !== undefined) {
+      formatted += `Style Guide Score: ${is.style_guide_score}`;
+      if (is.style_guide_issues !== undefined) {
+        formatted += ` (${is.style_guide_issues} issues)`;
+      }
+      formatted += '\n';
+    }
+    if (is.terminology_score !== undefined) {
+      formatted += `Terminology Score: ${is.terminology_score}`;
+      if (is.terminology_issues !== undefined) {
+        formatted += ` (${is.terminology_issues} issues)`;
+      }
+      formatted += '\n';
+    }
+    if (is.tone_score !== undefined) {
+      formatted += `Tone Score: ${is.tone_score}\n`;
+      if (is.informality !== undefined && is.target_informality !== undefined) {
+        formatted += `  - Informality: ${is.informality} (target: ${is.target_informality})\n`;
+      }
+      if (is.liveliness !== undefined && is.target_liveliness !== undefined) {
+        formatted += `  - Liveliness: ${is.liveliness} (target: ${is.target_liveliness})\n`;
+      }
+    }
   }
 
   return formatted;
@@ -732,7 +740,7 @@ async function main() {
             throw new Error('Invalid arguments for markupai_rewrite');
           }
 
-          const { text, dialect = 'american_english', tone = 'formal', style_guide = 'microsoft' } = args;
+          const { text, dialect = 'american_english', tone = 'professional', style_guide = 'microsoft' } = args;
 
           log('info', `Starting rewrite operation`, {
             textLength: text.length,
@@ -744,10 +752,10 @@ async function main() {
           // Submit rewrite request
           const submitResult = await submitWorkflow('rewrites', text, dialect, tone, style_guide);
 
-          // Poll for completion if workflow is running, otherwise use the immediate result
+          // Poll for completion if workflow is running
           const result = submitResult.status === 'running' && submitResult.workflow_id
-            ? await pollWorkflowCompletion(submitResult.workflow_id, 'rewrites', submitResult)
-            : submitResult;
+            ? await pollWorkflowCompletion(submitResult.workflow_id, 'rewrites')
+            : await getWorkflowStatus(submitResult.workflow_id, 'rewrites');
 
           return {
             content: [
@@ -764,7 +772,7 @@ async function main() {
             throw new Error('Invalid arguments for markupai_check');
           }
 
-          const { text, dialect = 'american_english', tone = 'formal', style_guide = 'microsoft' } = args;
+          const { text, dialect = 'american_english', tone = 'professional', style_guide = 'microsoft' } = args;
 
           log('info', `Starting check operation`, {
             textLength: text.length,
@@ -776,10 +784,10 @@ async function main() {
           // Submit check request
           const submitResult = await submitWorkflow('checks', text, dialect, tone, style_guide);
 
-          // Poll for completion if workflow is running, otherwise use the immediate result
+          // Poll for completion if workflow is running
           const result = submitResult.status === 'running' && submitResult.workflow_id
-            ? await pollWorkflowCompletion(submitResult.workflow_id, 'checks', submitResult)
-            : submitResult;
+            ? await pollWorkflowCompletion(submitResult.workflow_id, 'checks')
+            : await getWorkflowStatus(submitResult.workflow_id, 'checks');
 
           return {
             content: [
@@ -796,7 +804,7 @@ async function main() {
             throw new Error('Invalid arguments for markupai_suggestions');
           }
 
-          const { text, dialect = 'american_english', tone = 'formal', style_guide = 'microsoft' } = args;
+          const { text, dialect = 'american_english', tone = 'professional', style_guide = 'microsoft' } = args;
 
           log('info', `Starting suggestions operation`, {
             textLength: text.length,
@@ -808,10 +816,10 @@ async function main() {
           // Submit suggestions request
           const submitResult = await submitWorkflow('suggestions', text, dialect, tone, style_guide);
 
-          // Poll for completion if workflow is running, otherwise use the immediate result
+          // Poll for completion if workflow is running
           const result = submitResult.status === 'running' && submitResult.workflow_id
-            ? await pollWorkflowCompletion(submitResult.workflow_id, 'suggestions', submitResult)
-            : submitResult;
+            ? await pollWorkflowCompletion(submitResult.workflow_id, 'suggestions')
+            : await getWorkflowStatus(submitResult.workflow_id, 'suggestions');
 
           return {
             content: [
