@@ -43,6 +43,7 @@ if (missingVars.length > 0) {
 }
 
 // Configuration
+const INCLUDE_SCORES = process.env.INCLUDE_SCORES === 'true';
 const MARKUPAI_BASE_URL = process.env.MARKUPAI_BASE_URL || 'https://api.markup.ai';
 const MARKUPAI_API_KEY = process.env.MARKUPAI_API_KEY!;
 const WORKFLOW_TIMEOUT = parseInt(process.env.WORKFLOW_TIMEOUT || '60000', 10);
@@ -403,6 +404,11 @@ async function submitWorkflow(
     formData.append('dialect', dialect);
     formData.append('tone', tone);
 
+    // Optional: request richer responses if supported by API
+    if (INCLUDE_SCORES) {
+      formData.append('include_scores', 'true');
+    }
+
     // Convert style guide name to UUID
     const styleGuideId = STYLE_GUIDE_IDS[style_guide] || style_guide;
     formData.append('style_guide', styleGuideId);
@@ -411,7 +417,8 @@ async function submitWorkflow(
       dialect,
       tone,
       style_guide: styleGuideId,
-      textLength: text.length
+      textLength: text.length,
+      include_scores: INCLUDE_SCORES
     });
 
     const response = await fetch(`${MARKUPAI_BASE_URL}/v1/style/${endpoint}`, {
@@ -610,6 +617,104 @@ function formatResponse(result: StyleCheckResponse | RewriteResponse | Suggestio
       if (result.rewrite.output.merged_text) {
         formatted += '\n=== REWRITTEN TEXT ===\n';
         formatted += result.rewrite.output.merged_text + '\n';
+      }
+    }
+
+    // Fallback handling: some API responses return scores in a different shape
+    // original.scores and rewrite.scores instead of initial/final scores
+    const anyResult = result as unknown as Record<string, any>;
+    const originalScores = anyResult?.original?.scores as Record<string, any> | undefined;
+    const rewriteScores = (anyResult as any)?.rewrite?.scores as Record<string, any> | undefined;
+
+    // Emit deltas when we have both original and rewrite scores
+    if (originalScores && rewriteScores) {
+      const getNumber = (obj: Record<string, any> | undefined, path: string[]): number | undefined => {
+        try {
+          return path.reduce<any>((acc, key) => (acc != null ? acc[key] : undefined), obj);
+        } catch {
+          return undefined;
+        }
+      };
+
+      const clamp = (n: number | undefined) => (typeof n === 'number' ? n : undefined);
+
+      const orig = {
+        quality: clamp(getNumber(originalScores, ['quality', 'score'])),
+        grammar: clamp(getNumber(originalScores, ['quality', 'grammar', 'score'])),
+        grammarIssues: clamp(getNumber(originalScores, ['quality', 'grammar', 'issues'])),
+        consistency: clamp(getNumber(originalScores, ['quality', 'consistency', 'score'])),
+        terminology: clamp(getNumber(originalScores, ['quality', 'terminology', 'score'])),
+        clarity: clamp(getNumber(originalScores, ['analysis', 'clarity', 'score'])),
+        tone: clamp(getNumber(originalScores, ['analysis', 'tone', 'score'])),
+      };
+
+      const rew = {
+        quality: clamp(getNumber(rewriteScores, ['quality', 'score'])),
+        grammar: clamp(getNumber(rewriteScores, ['quality', 'grammar', 'score'])),
+        grammarIssues: clamp(getNumber(rewriteScores, ['quality', 'grammar', 'issues'])),
+        consistency: clamp(getNumber(rewriteScores, ['quality', 'consistency', 'score'])),
+        terminology: clamp(getNumber(rewriteScores, ['quality', 'terminology', 'score'])),
+        clarity: clamp(getNumber(rewriteScores, ['analysis', 'clarity', 'score'])),
+        tone: clamp(getNumber(rewriteScores, ['analysis', 'tone', 'score'])),
+      };
+
+      const delta = (a?: number, b?: number) =>
+        typeof a === 'number' && typeof b === 'number' ? (b - a) : undefined;
+
+      const lines: string[] = [];
+      const pushDelta = (label: string, before?: number, after?: number, suffix = '') => {
+        const d = delta(before, after);
+        if (typeof d === 'number') {
+          const sign = d >= 0 ? '+' : '';
+          lines.push(`${label}: ${before} → ${after} (${sign}${d}${suffix})`);
+        }
+      };
+
+      const pushIssuesDelta = (label: string, before?: number, after?: number) => {
+        if (typeof before === 'number' && typeof after === 'number') {
+          const diff = after - before; // negative is good (fewer issues)
+          const sign = diff >= 0 ? '+' : '';
+          lines.push(`${label} issues: ${before} → ${after} (${sign}${diff})`);
+        }
+      };
+
+      pushDelta('Quality Score', orig.quality, rew.quality);
+      pushDelta('Grammar Score', orig.grammar, rew.grammar);
+      pushIssuesDelta('Grammar', orig.grammarIssues, rew.grammarIssues);
+      pushDelta('Consistency Score', orig.consistency, rew.consistency);
+      pushDelta('Terminology Score', orig.terminology, rew.terminology);
+      pushDelta('Clarity Score', orig.clarity, rew.clarity);
+      pushDelta('Tone Score', orig.tone, rew.tone);
+
+      if (lines.length > 0) {
+        formatted += '\n=== SCORE DELTAS (Original → Rewritten) ===\n';
+        formatted += lines.join('\n') + '\n';
+
+        // PR-friendly single-line summary
+        const summarize = (label: string, before?: number, after?: number, issues = false) => {
+          if (typeof before !== 'number' || typeof after !== 'number') return undefined;
+          const diff = after - before;
+          const sign = diff >= 0 ? '+' : '';
+          return issues
+            ? `${label} issues ${before}→${after} (${sign}${diff})`
+            : `${label} ${sign}${diff} (${before}→${after})`;
+        };
+
+        const parts: string[] = [];
+        const pushPart = (s?: string) => { if (s) parts.push(s); };
+
+        pushPart(summarize('Quality', orig.quality, rew.quality));
+        pushPart(summarize('Grammar', orig.grammar, rew.grammar));
+        pushPart(summarize('Grammar', orig.grammarIssues, rew.grammarIssues, true));
+        pushPart(summarize('Clarity', orig.clarity, rew.clarity));
+        pushPart(summarize('Tone', orig.tone, rew.tone));
+        pushPart(summarize('Consistency', orig.consistency, rew.consistency));
+        pushPart(summarize('Terminology', orig.terminology, rew.terminology));
+
+        if (parts.length > 0) {
+          formatted += '\n=== SUMMARY (PR-friendly) ===\n';
+          formatted += parts.join(' | ') + '\n';
+        }
       }
     }
   }

@@ -1,6 +1,6 @@
 {
   "name": "markupai-mcp-server",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "MCP server for Markup AI API text analysis and improvement",
   "main": "dist/index.js",
   "type": "module",
