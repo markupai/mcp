@@ -7,9 +7,9 @@ A Model Context Protocol (MCP) server that integrates with the Markup AI API to 
 - **Text Rewriting**: Automatically improve text for clarity, tone, and style guide compliance
 - **Content Analysis**: Get detailed quality scores across multiple dimensions
 - **Writing Suggestions**: Receive specific recommendations for text improvements
-- **Style Guide Support**: AP, Chicago Manual of Style, Microsoft, and Proofpoint
-- **Multiple Dialects**: American, British, Australian, and Canadian English
-- **Tone Flexibility**: Academic, business, casual, conversational, formal, gen-z, informal, and technical
+- **Style Guide Support**: AP, Chicago Manual of Style, and Microsoft
+- **Multiple Dialects**: American, British, and Canadian English
+- **Tone Flexibility**: academic, confident, conversational, empathetic, engaging, friendly, professional, technical
 
 ## Installation
 
